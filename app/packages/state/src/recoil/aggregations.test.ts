@@ -4,25 +4,65 @@ vi.mock("recoil-relay");
 
 import { setMockAtoms, TestSelectorFamily } from "../../../../__mocks__/recoil";
 import * as aggregations from "./aggregations";
+import { State } from "./types";
 
 describe("groups ", () => {
-  const testModalAggregationPaths = <
-    TestSelectorFamily<typeof aggregations.modalAggregationPaths>
-  >(<unknown>aggregations.modalAggregationPaths({ path: "ground_truth" }));
-
-  it("resolves nested dynamic groups with slices", () => {
+  it("resolves grouped modal label paths", () => {
+    const testModalSampleAggregationPaths = <
+      TestSelectorFamily<typeof aggregations.modalAggregationPaths>
+    >(<unknown>aggregations.modalAggregationPaths({
+      path: "ground_truth.detections.one",
+    }));
     setMockAtoms({
       expandPath: (path) => `${path}.detections`,
-      filterFields: (path) => [`${path}.one`, `${path}.two`],
-      isNumericField: () => false,
-      labelFields: () => ["ground_truth", "predictions"],
-      groupId: null,
+      filterFields: (path) => [`${path}.one`, `${path}.two`, `${path}.numeric`],
+      isNumericField: (path) => path.endsWith(".numeric"),
+      labelFields: ({ space }) =>
+        space === State.SPACE.SAMPLE
+          ? ["ground_truth", "predictions"]
+          : ["frames.frames_ground_truth", "frames.frames_predictions"],
+      groupId: "groupId",
     });
-    expect(testModalAggregationPaths()).toStrictEqual([
+    expect(testModalSampleAggregationPaths()).toStrictEqual([
       "ground_truth.detections.one",
       "ground_truth.detections.two",
       "predictions.detections.one",
       "predictions.detections.two",
+    ]);
+
+    const testModalSampleNumericAggregationPaths = <
+      TestSelectorFamily<typeof aggregations.modalAggregationPaths>
+    >(<unknown>aggregations.modalAggregationPaths({
+      path: "ground_truth.detections.numeric",
+    }));
+
+    expect(testModalSampleNumericAggregationPaths()).toStrictEqual([
+      "ground_truth.detections.numeric",
+      "predictions.detections.numeric",
+    ]);
+
+    const testModalFrameAggregationPaths = <
+      TestSelectorFamily<typeof aggregations.modalAggregationPaths>
+    >(<unknown>aggregations.modalAggregationPaths({
+      path: "frames.frames_ground_truth.detections.one",
+    }));
+
+    expect(testModalFrameAggregationPaths()).toStrictEqual([
+      "frames.frames_ground_truth.detections.one",
+      "frames.frames_ground_truth.detections.two",
+      "frames.frames_predictions.detections.one",
+      "frames.frames_predictions.detections.two",
+    ]);
+
+    const testModalFrameNumericAggregationPaths = <
+      TestSelectorFamily<typeof aggregations.modalAggregationPaths>
+    >(<unknown>aggregations.modalAggregationPaths({
+      path: "frames.frames_ground_truth.detections.numeric",
+    }));
+
+    expect(testModalFrameNumericAggregationPaths()).toStrictEqual([
+      "frames.frames_ground_truth.detections.numeric",
+      "frames.frames_predictions.detections.numeric",
     ]);
   });
 });

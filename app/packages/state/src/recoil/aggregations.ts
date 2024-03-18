@@ -191,7 +191,7 @@ export const modalAggregationPaths = selectorFamily({
       paths = paths.map((p) => get(schemaAtoms.filterFields(p))).flat();
 
       const numeric = get(schemaAtoms.isNumericField(params.path));
-      if (params.mixed || (get(groupId) && numeric)) {
+      if (params.mixed || get(groupId)) {
         paths = paths.filter((p) => {
           const n = get(schemaAtoms.isNumericField(p));
           return numeric ? n : !n;
