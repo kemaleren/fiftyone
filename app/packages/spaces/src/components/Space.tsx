@@ -10,15 +10,30 @@ import Panel from "./Panel";
 import PanelTab from "./PanelTab";
 import SplitPanelButton from "./SplitPanelButton";
 import { PanelContainer, PanelTabs, SpaceContainer } from "./StyledElements";
+import { useCallback } from "react";
+import { debounce } from "lodash";
 
 export default function Space({ node, id }: SpaceProps) {
   const { spaces } = useSpaces(id);
   const autoPosition = usePanelTabAutoPosition();
 
+  const setSpaceSizes = useCallback(
+    debounce((node, sizes) => {
+      spaces.setNodeSizes(node, sizes);
+    }, 500),
+    [spaces]
+  );
+
   if (node.layout) {
     return (
       <SpaceContainer data-type="space-container">
-        <Allotment vertical={node.layout === Layout.Vertical}>
+        <Allotment
+          vertical={node.layout === Layout.Vertical}
+          onChange={(sizes) => {
+            setSpaceSizes(node, sizes);
+          }}
+          defaultSizes={node.sizes || []}
+        >
           {node.children.map((space) => (
             <Allotment.Pane key={space.id}>
               <Space node={space} id={id} />
