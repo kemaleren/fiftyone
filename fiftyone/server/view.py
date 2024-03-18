@@ -5,6 +5,7 @@ FiftyOne Server view.
 | `voxel51.com <https://voxel51.com/>`_
 |
 """
+
 from typing import List, Optional
 
 from bson import ObjectId
@@ -95,7 +96,7 @@ def get_view(
         extended_stages (None): extended view stages
         sample_filter (None): an optional
             :class:`fiftyone.server.filters.SampleFilter`
-        reload (None): whether to reload the dataset
+        reload (True): whether to reload the dataset
 
     Returns:
         a :class:`fiftyone.core.view.DatasetView`
@@ -705,10 +706,12 @@ def _count_list_items(path, view):
 
 def _match_label_tags(view: foc.SampleCollection, label_tags):
     label_paths = [
-        f"{path}.{field.document_type._LABEL_LIST_FIELD}"
-        if isinstance(field, fof.EmbeddedDocumentField)
-        and issubclass(field.document_type, fol._HasLabelList)
-        else path
+        (
+            f"{path}.{field.document_type._LABEL_LIST_FIELD}"
+            if isinstance(field, fof.EmbeddedDocumentField)
+            and issubclass(field.document_type, fol._HasLabelList)
+            else path
+        )
         for path, field in foc._iter_label_fields(view)
     ]
     values = label_tags["values"]
