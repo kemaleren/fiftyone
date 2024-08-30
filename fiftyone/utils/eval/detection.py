@@ -27,6 +27,13 @@ from .base import BaseEvaluationResults
 logger = logging.getLogger(__name__)
 
 
+def _doc_get(doc, field, default=None):
+    try:
+        return doc[field]
+    except KeyError:
+        return default
+
+
 def evaluate_detections(
     samples,
     pred_field,
@@ -176,10 +183,9 @@ def evaluate_detections(
     processing_frames = samples._is_frame_field(pred_field)
     save = eval_key is not None
 
-    if save:
-        tp_field = "%s_tp" % eval_key
-        fp_field = "%s_fp" % eval_key
-        fn_field = "%s_fn" % eval_key
+    tp_field = f"{eval_key}_tp"
+    fp_field = f"{eval_key}_fp"
+    fn_field = f"{eval_key}_fn"
 
     if config.requires_additional_fields:
         _samples = samples
@@ -188,32 +194,104 @@ def evaluate_detections(
 
     matches = []
     logger.info("Evaluating detections...")
-    for sample in _samples.iter_samples(progress=progress, autosave=save):
+    for sample in _samples.iter_samples(progress=progress, autosave=False):
         if processing_frames:
             docs = sample.frames.values()
         else:
             docs = [sample]
 
-        sample_tp = 0
-        sample_fp = 0
-        sample_fn = 0
+        sample_values = {
+            tp_field: 0,
+            fp_field: 0,
+            fn_field: 0,
+        }
+        frame_values = {
+            tp_field: [],
+            fp_field: [],
+            fn_field: [],
+        }
+
         for doc in docs:
             doc_matches = eval_method.evaluate(doc, eval_key=eval_key)
             matches.extend(doc_matches)
             tp, fp, fn = _tally_matches(doc_matches)
-            sample_tp += tp
-            sample_fp += fp
-            sample_fn += fn
+            sample_values[tp_field] += tp
+            sample_values[fp_field] += fp
+            sample_values[fn_field] += fn
 
-            if processing_frames and save:
-                doc[tp_field] = tp
-                doc[fp_field] = fp
-                doc[fn_field] = fn
+            if save and processing_frames:
+                frame_values[tp_field].append(tp)
+                frame_values[fp_field].append(fp)
+                frame_values[fn_field].append(fn)
 
+        # saving the entire sample was expensive for samples with
+        # large numbers of detections (or any large data).
+        # since we're only saving a few fields here, use
+        # `set_values()` to only update the fields that actually
+        # changed.
+        sample_view = samples.match(
+            fo.ViewField("filepath") == sample["filepath"]
+        )
         if save:
-            sample[tp_field] = sample_tp
-            sample[fp_field] = sample_fp
-            sample[fn_field] = sample_fn
+            for field, val in sample_values.items():
+                sample_view.set_values(
+                    field,
+                    {sample.filepath: val},
+                    key_field="filepath",
+                )
+
+            if processing_frames:
+                for field, vals in frame_values.items():
+                    sample_view.set_values(
+                        f"frames.{field}",
+                        {sample.filepath: vals},
+                        key_field="filepath",
+                    )
+
+                # FIXME: we need to set `eval_key`, `id_key`, and
+                # `iou_key` on individual frames. Not sure if there's
+                # a way to use `set_values()` to do that on nexted
+                # iterables.
+
+            else:
+                # `evaluate()` modifies detections in both the
+                # `pred_field` and `gt_field` to add fields for
+                # `eval_key`, `id_key`, and `iou_key`.
+
+                # since there's no way to use `autosave` without
+                # re-uploading the entire sample, we have to set them
+                # here.
+                id_key = f"{eval_key}_id"
+                iou_key = f"{eval_key}_iou"
+
+                for field in [pred_field, gt_field]:
+                    eval_vals = list(
+                        _doc_get(d, eval_key) for d in sample[field].detections
+                    )
+                    id_vals = list(
+                        _doc_get(d, id_key) for d in sample[field].detections
+                    )
+                    iou_vals = list(
+                        _doc_get(d, iou_key) for d in sample[field].detections
+                    )
+
+                    sample_view.set_values(
+                        f"{pred_field}.detections.{eval_key}",
+                        {sample.filepath: eval_vals},
+                        key_field="filepath",
+                    )
+                    sample_view.set_values(
+                        f"{pred_field}.detections.{id_key}",
+                        {sample.filepath: id_vals},
+                        key_field="filepath",
+                        skip_none=True,
+                    )
+                    sample_view.set_values(
+                        f"{pred_field}.detections.{iou_key}",
+                        {sample.filepath: iou_vals},
+                        key_field="filepath",
+                        skip_none=True,
+                    )
 
     results = eval_method.generate_results(
         samples,
@@ -307,9 +385,9 @@ class DetectionEvaluation(foe.EvaluationMethod):
         processing_frames = samples._is_frame_field(_pred_field)
         dataset = samples._dataset
 
-        tp_field = "%s_tp" % eval_key
-        fp_field = "%s_fp" % eval_key
-        fn_field = "%s_fn" % eval_key
+        tp_field = f"{eval_key}_tp"
+        fp_field = f"{eval_key}_fp"
+        fn_field = f"{eval_key}_fn"
 
         dataset.add_sample_field(tp_field, fof.IntField)
         dataset.add_sample_field(fp_field, fof.IntField)
